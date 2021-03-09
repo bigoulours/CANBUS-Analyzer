@@ -10,13 +10,19 @@ namespace CANBUS
     {
       _pid = pid;
       _str = s;
+      idLength = s.IndexOf(" ", 0);
+      busLength = s.IndexOf(" ", idLength + 1) - idLength - 1;
       _count = 1;
       parser = p;
-      parser.packets.TryGetValue(pid, out packet);
+      parser.packets.TryGetValue(Tuple.Create(pid, int.Parse(Bus)), out packet);
+      if (packet == null)
+         parser.packets.TryGetValue(Tuple.Create(pid, -1), out packet);
       mainWindow = mainwindow;
     }
 
     private string _str;
+    private int idLength;
+    private int busLength;
     public string Str
     {
       get
@@ -39,7 +45,15 @@ namespace CANBUS
     {
       get
       {
-        return _str.Substring(0, 3);
+        return _str.Substring(0, idLength);
+      }
+    }
+    
+    public string Bus
+    {
+      get
+      {
+        return _str.Substring(idLength + 1, busLength);
       }
     }
 
@@ -47,7 +61,7 @@ namespace CANBUS
     {
       get
       {
-        return _str.Substring(4, _str.Length - 4);
+        return _str.Substring(idLength + 1 + busLength + 1, _str.Length - idLength - 1 - busLength - 1);
       }
     }
 

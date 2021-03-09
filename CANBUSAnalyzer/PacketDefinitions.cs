@@ -11,9 +11,8 @@ namespace CANBUS
         public enum DefinitionSource
         {
             Default = 0,
-            SMTModelS = 1,
-            SMTModel3 = 2,
-            DBCFile = 3
+            DBCFile = 1,
+            SMTModelS = 2
         }
 
         public DefinitionSource Source { get; private set; }
@@ -27,17 +26,12 @@ namespace CANBUS
 
         public static IEnumerable<PacketDefinitions> GetAll()
         {
-            return new PacketDefinitions[] { GetSMTModelS(), GetSMTModel3(), GetDBCFile() };
+            return new PacketDefinitions[] { GetSMTModelS(), GetDBCFile() };
         }
 
         public static PacketDefinitions GetSMTModelS()
         {
-            return new PacketDefinitions(DefinitionSource.SMTModelS, "Model S (ScanMyTesla)");
-        }
-
-        public static PacketDefinitions GetSMTModel3()
-        {
-            return new PacketDefinitions(DefinitionSource.SMTModel3, "Model 3 (ScanMyTesla)");
+            return new PacketDefinitions(DefinitionSource.SMTModelS, "Model S");
         }
 
         public static PacketDefinitions GetDBCFile()

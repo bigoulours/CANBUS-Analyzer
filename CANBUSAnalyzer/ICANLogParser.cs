@@ -8,6 +8,6 @@ namespace CANBUS
 {
     interface ICANLogParser
     {
-        string ParseLine(string rawLine);
+        string ParseLine(string rawLine, out string timestamp);
     }
 }

@@ -1,4 +1,4 @@
-﻿<Window x:Class="CANBUS.MainWindow"
+<Window x:Class="CANBUS.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,104 +7,91 @@
         xmlns:oxy="http://oxyplot.org/wpf"
         mc:Ignorable="d"
         DataContext="{Binding RelativeSource={RelativeSource Self}}"
-        Title="CANBUS analyzer" Height="608.182" Width="1339.362" KeyDown="PathList_KeyDown" WindowState="Maximized" Closed="Window_Closed">
+        Title="CANBUS analyzer" Height="700" Width="1340" WindowState="Maximized" Closed="Window_Closed">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="303*"/>
             <RowDefinition Height="274*"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="324*"/>
-            <ColumnDefinition Width="263*"/>
-            <ColumnDefinition Width="267*"/>
-            <ColumnDefinition Width="404*"/>
+            <ColumnDefinition Width="346*"/>
+            <ColumnDefinition Width="275*"/>
+            <ColumnDefinition Width="283*"/>
+            <ColumnDefinition Width="427*"/>
         </Grid.ColumnDefinitions>
-        <TextBox x:Name="KeywordTextBox" Height="23" Margin="10,10,10,0" TextWrapping="Wrap" Text="VIN: " VerticalAlignment="Top"/>
-        <TextBox x:Name="BatterySerialBox" Height="23" Margin="10,38,10,0" TextWrapping="Wrap" Text="Battery serial number:" VerticalAlignment="Top"/>
-        <TextBox x:Name="FirmwareBox" Height="23" Margin="10,66,10,0" TextWrapping="Wrap" Text="Firmware version:" VerticalAlignment="Top"/>
 
-        <WrapPanel Grid.Column="1" Margin="4,0,0,0" Grid.ColumnSpan="3" >
-            <Button Content="Load" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_Load" />
-            <Button Content="&gt;" Margin="6,10,0,0" Width="40" Height="20" Click="Button_Click_Left" />
-            <Button Content="Stop" Margin="6,10,0,0" Width="40" Height="20" Click="Button_Click_Stop" />
-            <Button x:Name="PrevLog" Content="&lt;&lt;" Margin="6,10,0,0" Width="40" Height="20" Click="Button_Click_PrevtLog" />
-            <Button x:Name="NextLog" Content="&gt;&gt;" Margin="6,10,0,0" Width="40" Height="20" Click="Button_Click_NextLog" />
-
-            <Button x:Name="Color" Content="Color Me!" Margin="24,10,0,0" Width="76" Height="20" Click="Button_Click_Color" />
-            <Button x:Name="InterpretAs" Content="Interpret as" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_InterpretAs" />
-            <Button x:Name="CopyIDButton" Content="Copy ID" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_CopyID" />
-
-            <Button Content="as byte" Margin="24,10,0,0" Width="75" Height="20" Click="Button_Click_AsByte" />
-            <Button Content="as word" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_AsWord" />
-            <Button Content="as int" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_AsInt" />
-            <Button Content="Delete" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_Delete" />
-            <Button Content="as temps" Margin="6,10,0,0" Width="75" Height="20" Click="Button_Click_AsTemps" />
-
-            <ComboBox Name="PacketMode" Height="23" Margin="6,10,0,0" Width="150" SelectionChanged="PacketMode_SelectionChanged" />
-            <Button Content="Zero trip" Width="75" Height="23" Click="Button_Click"/>
+        <WrapPanel Margin="10,5,7,0" VerticalAlignment="Top" Height="68" >
+            <Button Content="Load DBC" Margin="6,5,6,0" Width="75" Height="20" Click="Button_Click_DBC" />
+            <Button Content="Load log" Margin="6,5,12,0" Width="75" Height="20" Click="Button_Click_Load" />
+            <Button x:Name="PrevLog" Content="Prev. log" Margin="6,5,6,0" Width="60" Height="20" Click="Button_Click_PrevtLog" />
+            <Button x:Name="NextLog" Content="Next log" Margin="6,5,6,0" Width="60" Height="20" Click="Button_Click_NextLog" />
+            <!--<Button Content="Refresh" Margin="6,5,6,0" Width="75" Height="20" Click="Button_Click_Refresh" />-->
+            <ComboBox Name="PacketMode" Height="23" Margin="0,0,0,0" Width="10" SelectionChanged="PacketMode_SelectionChanged" Visibility="Hidden"/>
         </WrapPanel>
 
-        <DataGrid x:Name="PathList" Margin="10,94,10,10" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutoGenerateColumns="False" FontFamily="Courier New" SelectionChanged="PathList_SelectionChanged" PreviewKeyDown="PathList_KeyDown" Grid.RowSpan="2">
+        <DataGrid x:Name="PathList" Margin="10,93,7,100" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutoGenerateColumns="False" FontFamily="Courier New" SelectionChanged="PathList_SelectionChanged" Grid.RowSpan="2" AllowDrop="True" Drop="dataGridPathList_DragDrop" DragOver="dataGridPathList_DragOver">
             <DataGrid.Columns>
                 <!--<DataGridTextColumn Binding="{Binding Length, Mode=OneWay, IsAsync=True}"/>-->
-                <DataGridTextColumn Binding="{Binding Count, Mode=OneWay, IsAsync=True}"/>
-                <DataGridTextColumn Binding="{Binding Pid, Mode=OneWay, IsAsync=True}"/>
-                <DataGridTextColumn Binding="{Binding Packet, Mode=OneWay, IsAsync=True}"/>
-                <DataGridTextColumn Binding="{Binding Payload, Mode=OneWay, IsAsync=True}"/>
-                <DataGridCheckBoxColumn Binding="{Binding Used, Mode=OneWay, IsAsync=True}"/>
-                <DataGridCheckBoxColumn Binding="{Binding Stay}"/>
-                <DataGridTextColumn Binding="{Binding Verbose, Mode=OneWay, IsAsync=True}">
+                <!--<DataGridTextColumn Binding="{Binding Pid, Mode=OneWay, IsAsync=True}"/>-->
+                <DataGridTextColumn Header="ID" Binding="{Binding Packet, Mode=OneWay, IsAsync=True}"/>
+                <DataGridTextColumn Header="Message" Binding="{Binding Verbose, Mode=OneWay, IsAsync=True}">
                     <DataGridTextColumn.CellStyle>
                         <Style TargetType="DataGridCell">
                             <Setter Property="ToolTip" Value="{Binding Verbose}" />
                         </Style>
                     </DataGridTextColumn.CellStyle>
                 </DataGridTextColumn>
+                <!--<DataGridCheckBoxColumn Header="sel." Binding="{Binding Stay}"/>-->
+                <DataGridTextColumn Header="Count" Binding="{Binding Count, Mode=OneWay, IsAsync=True}"/>
+                <!--<DataGridCheckBoxColumn Header="dbc" Binding="{Binding Used, Mode=OneWay, IsAsync=True}"/>-->
+                <DataGridTextColumn Header="Bus" Binding="{Binding Bus, Mode=OneWay, IsAsync=True}"/>
+                <DataGridTextColumn Header="Raw" Binding="{Binding Payload, Mode=OneWay, IsAsync=True}"/>
+            </DataGrid.Columns>
+            <DataGrid.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#FF0078D7"/>
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+            </DataGrid.Resources>
+        </DataGrid>
+        <!--<StackPanel Grid.Column="3" Margin="8,38,10,10" Orientation="Vertical" Grid.RowSpan="2"/>-->
+
+        <Grid Background="White" Margin="10" Grid.ColumnSpan="3" Grid.RowSpan="2" Grid.Column="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="69*"/>
+                <ColumnDefinition Width="16*"/>
+                <ColumnDefinition Width="88*"/>
+                <ColumnDefinition Width="789*"/>
+            </Grid.ColumnDefinitions>
+            <DataGrid x:Name="HitsDataGrid" Margin="5,5,0,30" IsReadOnly="True" AutoGenerateColumns="False" SelectionChanged="HitsDataGrid_SelectionChanged" Grid.ColumnSpan="3">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Signal" Binding="{Binding Key, IsAsync=True}"/>
+                    <DataGridTextColumn Header="Value" Binding="{Binding Value.Current, IsAsync=True}"/>
+                    <DataGridTextColumn Header="Unit" Binding="{Binding Value.unit, IsAsync=True}"/>
+                </DataGrid.Columns>
+                <DataGrid.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#FF0078D7"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                </DataGrid.Resources>
+            </DataGrid>
+            <oxy:Plot x:Name="Graph" Margin="10,0" Grid.Column="3" LegendPosition="TopCenter" LegendPlacement="Outside" LegendOrientation="Horizontal">
+                <oxy:LineSeries ItemsSource="{Binding Points, IsAsync=True}" />
+            </oxy:Plot>
+            <TextBlock x:Name="BitBox" Margin="0,0,10,10" FontFamily="Courier New" FontSize="16" Visibility="Hidden" Grid.ColumnSpan="2"/>
+            <GridSplitter Grid.Column="3" HorizontalAlignment="Left" Margin="10,0,0,0" Width="3"/>
+            <Button x:Name="DisplayHelpWindow" Grid.ColumnSpan="3" Content="Display Help Window" Margin="5,0,0,0" Click="Button_DisplayHelp" Height="25" VerticalAlignment="Bottom"/>
+        </Grid>
+        <GridSplitter Grid.Column="1" HorizontalAlignment="Left" Margin="0,10" Width="3" Grid.RowSpan="2"/>
+        <DataGrid x:Name="DBCFilesGrid" Margin="10,0,7,10" AutoGenerateColumns="False" FontFamily="Courier New" Grid.Row="1" Height="85" VerticalAlignment="Bottom" BeginningEdit="AbortThread" CellEditEnding="DBCFilesGrid_CellEditEnding" AllowDrop="True" Drop="dataGridDBC_DragDrop" DragOver="dataGridDBC_DragOver">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="DBC-File" MinWidth="100" Width="270" Binding="{Binding Path, Mode=OneWay, IsAsync=True}">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Bus" IsReadOnly="False" Binding="{Binding Bus, Mode=TwoWay, IsAsync=True, UpdateSourceTrigger=PropertyChanged}"/>
+                <!--<DataGridCheckBoxColumn Header="J1939" IsReadOnly="False" Binding="{Binding isJ1939, Mode=TwoWay, IsAsync=True}"/>-->
             </DataGrid.Columns>
         </DataGrid>
-        <StackPanel Grid.Column="3" Margin="8,38,10,10" Orientation="Vertical" Grid.RowSpan="2"/>
-
-        <GridSplitter Grid.Column="1" HorizontalAlignment="Left" Margin="0,10" Width="5" Grid.RowSpan="2"/>
-
-        <TabControl Margin="10,72,10,10" Grid.ColumnSpan="3" Grid.RowSpan="2" Grid.Column="1">
-            <TabItem Header="Packets">
-                <Grid Background="#FFE5E5E5">
-                    <DataGrid x:Name="AnalyzeResults" Margin="10,44,10,0" IsReadOnly="True" AutoGenerateColumns="True" MouseDoubleClick="HitsDataGrid_MouseDoubleClick" SelectionChanged="HitsDataGrid_SelectionChanged" ClipboardCopyMode="IncludeHeader"/>
-                    <Button Content="Analyze packets" HorizontalAlignment="Left" Margin="10,10,0,0" VerticalAlignment="Top" Width="115" Click="Button_Click_AnalyzePackets"/>
-                </Grid>
-            </TabItem>
-            <TabItem Header="Bits &amp; Graph">
-                <Grid Background="#FFE5E5E5">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="40*"/>
-                        <ColumnDefinition Width="91*"/>
-                        <ColumnDefinition Width="323*"/>
-                    </Grid.ColumnDefinitions>
-                    <DataGrid x:Name="HitsDataGrid" Margin="10,10,10,0" IsReadOnly="True" AutoGenerateColumns="False" MouseDoubleClick="HitsDataGrid_MouseDoubleClick" SelectionChanged="HitsDataGrid_SelectionChanged" Grid.Column="1">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Binding="{Binding Key, IsAsync=True}"/>
-                            <DataGridTextColumn Binding="{Binding Value.Current, IsAsync=True}"/>
-                            <DataGridTextColumn Binding="{Binding Value.unit, IsAsync=True}"/>
-                            <!--<DataGridTemplateColumn>
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <ItemContainerTemplate>
-
-                                        <ProgressBar Value="{Binding Value.Current, IsAsync=True}"
-                                        />
-                                    
-                                    </ItemContainerTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn> -->
-                        </DataGrid.Columns>
-                    </DataGrid>
-                    <oxy:Plot x:Name="Graph" Margin="10,0,10,10" Grid.Column="2" LegendPosition="TopLeft">
-                        <oxy:LineSeries ItemsSource="{Binding Points, IsAsync=True}"/>
-                    </oxy:Plot>
-                    <TextBlock x:Name="BitBox" Margin="0,0,10,10" FontFamily="Courier New" FontSize="16"/>
-                    <GridSplitter Grid.Column="2" HorizontalAlignment="Left" Margin="10,0,0,10" Width="7"/>
-                    <GridSplitter Grid.Column="1" HorizontalAlignment="Left" Width="5"/>
-                </Grid>
-            </TabItem>
-        </TabControl>
     </Grid>
 </Window>

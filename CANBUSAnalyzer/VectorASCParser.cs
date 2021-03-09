@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -11,11 +11,14 @@ namespace CANBUS
     class VectorASCParser : ICANLogParser
     {
         private const int MinColumns = 7;
-        private const int IDLength = 3;
+        private const int CANOpenIDLength = 3;
+        private const int SAEIDLength = 8;
         private const int ByteLength = 2;
 
         private static class ColumnIndex
         {
+            public const int Timestamp = 0;
+            public const int Bus = 1;
             public const int ID = 2;
             public const int DataLength = 5;
             public const int FirstByte = 6;
@@ -29,9 +32,10 @@ namespace CANBUS
             regexLine = new Regex(@"^\s*((?<Data>[^ ]+)\s*)+", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture);
         }
 
-        public string ParseLine(string rawLine)
+        public string ParseLine(string rawLine, out string timestamp)
         {
             string formattedLine = null;
+            timestamp = null;
             if (rawLine != null)
             {
                 // Look for "// version" line or an empty line to mark the end of the file header
@@ -44,13 +48,27 @@ namespace CANBUS
                     {
                         CaptureCollection capData = m.Groups["Data"].Captures;
 
+                        timestamp = capData[ColumnIndex.Timestamp].Value.Replace(".", string.Empty);
+
+                        string id = capData[ColumnIndex.ID].Value;
                         // Ensure that this is a valid (non-error) frame
-                        string id = ZeroPadID(capData[ColumnIndex.ID].Value);
+                        if (id.Length < CANOpenIDLength)
+                         id = id.PadLeft(CANOpenIDLength, '0');
+                        else
+                            if ((id.Length > CANOpenIDLength) && (id.Length < SAEIDLength))
+                                id = id.PadLeft(SAEIDLength, '0');
+                        if (id.Length > SAEIDLength)
+                            id = id.Substring(0,SAEIDLength);
+
                         int dataLength;
-                        if (id.Length == IDLength && int.TryParse(capData[ColumnIndex.DataLength].Value, out dataLength))
+                        if ((id.Length == CANOpenIDLength || id.Length == SAEIDLength) && int.TryParse(capData[ColumnIndex.DataLength].Value, out dataLength))
                         {
-                            // Start with the message ID
-                            formattedLine = id;
+                            // Starting with message ID
+                            formattedLine = id + " ";
+
+                            // Append Bus#
+                            string bus = capData[ColumnIndex.Bus].Value;
+                            formattedLine += bus + " ";
 
                             // Append message data
                             for (int i = ColumnIndex.FirstByte; i < ColumnIndex.FirstByte + dataLength && i < capData.Count; i++)
@@ -60,6 +78,7 @@ namespace CANBUS
 
                                 // Add to formatted data
                                 formattedLine += capData[i].Value;
+                                 
                             }
                         }
                         else
@@ -72,14 +91,6 @@ namespace CANBUS
             }
 
             return formattedLine;
-        }
-
-        private string ZeroPadID(string s)
-        {
-            if (s != null && s.Length < IDLength)
-                s = s.PadLeft(3, '0');
-
-            return s;
         }
 
         private bool IsEndOfHeader(string rawLine)

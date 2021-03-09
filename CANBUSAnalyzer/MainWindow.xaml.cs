@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Wpf;
@@ -19,6 +19,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TeslaSCAN;
+using AssociatedDBC;
 
 namespace CANBUS
 {
@@ -27,75 +28,78 @@ namespace CANBUS
   /// </summary>
   public partial class MainWindow : Window, IDisposable
   {
+    private string[] allowedLogFormat = { "TXT", "CSV", "ASC" };
     private static class LogFileExtension
     {
-        public const string CSV = ".csv";
         public const string ASC = ".asc";
+        public const string CSV = ".csv";
+        public const string TXT = ".txt";
     }
-    static bool exclude_unknownPackets = false;
 
     private bool disposed = false;
-    //ConcurrentQueue<Hits> hits = new ConcurrentQueue<Hits>();
     bool run = false;
-    //private Parser parser;
-    //ConcurrentDictionary<int, string> runningTasks = new ConcurrentDictionary<int, string>();
-    //SortedList<int, string> runningTasks = new SortedList<int, string>();
     ObservableCollection<StringWithNotify> runningTasks = new ObservableCollection<StringWithNotify>();
     private Timer timer;
     public Stopwatch stopwatch;
+    private const int CANOpenIDLength = 3;
+    private const int SAEIDLength = 8;
     private StreamReader inputStream;
     private Parser parser;
-    private uint interpret_source;
-    private uint packet;
+    //private uint interpret_source;
+    private uint packetId;
+    private int busId;
     private long prevUpdate;
-    private long prevBitsUpdate;
     private string currentLogFile;
     private long currentLogSize;
     private string currentTitle;
-    //private bool isCSV;
     private Thread thread;
     private ICANLogParser logParser;
+    ObservableCollection<DBCwAssociatedBus>  dbcList = new ObservableCollection<DBCwAssociatedBus>();
 
-    BindableTwoDArray<char> MyBindableTwoDArray { get; set; }
-    public Trip trip;
+    //SortedDictionary<int, char> batterySerial = new SortedDictionary<int, char>();
 
-    SortedDictionary<int, char> batterySerial = new SortedDictionary<int, char>();
+    private OxyPlot.Wpf.LinearAxis primaryAxis = new OxyPlot.Wpf.LinearAxis();
+    private OxyPlot.Wpf.LinearAxis secondaryAxis = new OxyPlot.Wpf.LinearAxis();
+    
 
     public MainWindow()
     {
 
       InitializeComponent();
-      MyBindableTwoDArray = new BindableTwoDArray<char>(8, 8);
+
       PathList.ItemsSource = runningTasks;       
       PopulateDropdown(PacketMode, PacketDefinitions.GetAll(), "Source", "Name");
       HitsDataGrid.ItemsSource = parser.items;
-      //HitsDataGrid.DataContext = parser.items;
+      DBCFilesGrid.ItemsSource = dbcList;
+
       stopwatch = new Stopwatch();
       stopwatch.Start();
-      //AnalyzeResults.ItemsSource = parser.items.Values;
+        
+      OxyPlot.Wpf.TimeSpanAxis timeAxis = new OxyPlot.Wpf.TimeSpanAxis();
+      timeAxis.Position = AxisPosition.Bottom;
+      Graph.Axes.Add(timeAxis);      
+        primaryAxis.Key = "Primary";
+        primaryAxis.Position = AxisPosition.Left;
+        primaryAxis.Title = "●";
+        primaryAxis.TitlePosition = 1;
+        secondaryAxis.Key = "Secondary";
+        secondaryAxis.Position = AxisPosition.Right;
+        secondaryAxis.Title = "▶";
+        secondaryAxis.TitleFontSize = 8;
+        secondaryAxis.TitlePosition = 1;
 
-      Graph.Axes.Add(new OxyPlot.Wpf.TimeSpanAxis());
-      Graph.Axes[0].Position = AxisPosition.Bottom;
-      var linearAxis = new OxyPlot.Wpf.LinearAxis();
-      linearAxis.Position = AxisPosition.Left;
-      Graph.Axes.Add(linearAxis);
+        //PathList.Columns[0].SortDirection = ListSortDirection.Ascending;
 
-      //Button_Click_AnalyzePackets(null, null);
+        if (CANBUS.App.StartupLogFilename != null)
+        {
+            StartParseLog(CANBUS.App.StartupLogFilename);
+        }
 
-      PathList.Columns[2].SortDirection = ListSortDirection.Descending;
+        dbcList.CollectionChanged += (s, e) =>
+        {
+            Start_Parsing();
+        };
 
-      AnalyzeResults.ItemsSource = parser.items.Values;
-
-      trip = new Trip(false);
-
-      if (CANBUS.App.StartupDBCFilename != null) {
-        parser = Parser.FromSource(this, PacketDefinitions.DefinitionSource.DBCFile, CANBUS.App.StartupDBCFilename);
-      }
-
-      if (CANBUS.App.StartupLogFilename != null)
-      {
-        StartParseLog(CANBUS.App.StartupLogFilename);
-      }
     }
 
     private void loop()
@@ -106,26 +110,315 @@ namespace CANBUS
       }
     }
 
-    private void setGraphSeriesList(List<KeyValuePair<string, ConcurrentStack<DataPoint>>> seriesList)
+        private void addSeriesToGraph(KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>> series, uint yAxis)
     {
-      Graph.Series.Clear();
+            if (series.Key.Item2.Any())
+            {
+                foreach (var dataPoint in series.Value)
+                {
+                    dataPoint.Description = series.Key.Item2.Any() ? " (" + series.Key.Item2.First(x => x.Key == dataPoint.Y).Value + ")" : string.Empty;
+                }
+            }
+            
+            switch (yAxis)
+            {
+                case 1:
+                    Graph.Series.Add(
+                        new LineSeries()
+                        {
+                            TrackerFormatString = "{0}\n{1}: {2:hh\\:mm\\:ss\\.fff}\nY: {4} {Description}",
+                                //+ ((series.Key.Item2.Count > 0)? "\n" + string.Join("\n", series.Key.Item2) : ""),
+                                //+ ((series.Key.Item2.Count > 0)? " (" + series.Key.Item2.First(x => x.Key.ToString() == "{4}").Value + ")" : ""),
+                            StrokeThickness = 1,
+                            LineStyle = LineStyle.Solid,
+                            Title = series.Key.Item1,
+                            ItemsSource = series.Value,
+                            MarkerType = MarkerType.Circle,
+                            YAxisKey = "Primary"
+                    });
+                break;
+            case 2:
+                Graph.Series.Add(
+                    new LineSeries()
+                    {
+                        TrackerFormatString = "{0}\n{1}: {2:hh\\:mm\\:ss\\.fff}\nY: {4} {Description}",
+                            //+ ((series.Key.Item2.Count > 0) ? "\n" + string.Join("\n", series.Key.Item2) : ""),
+                        StrokeThickness = 1,
+                        LineStyle = LineStyle.Solid,
+                        Title = series.Key.Item1,
+                        ItemsSource = series.Value,
+                        MarkerType = MarkerType.Triangle,
+                        YAxisKey = "Secondary"
+                    });
+                break;
+            }
+    }
 
+    private void setGraphSeriesList(List<KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>> seriesList)
+    {
+        Graph.Axes.Remove(primaryAxis);
+        Graph.Axes.Remove(secondaryAxis);
 
-      foreach (var series in seriesList)
-      {
-        Graph.Series.Add(
-          new LineSeries() { StrokeThickness = 1, LineStyle = LineStyle.Solid, Title = series.Key, ItemsSource = series.Value });
+        double yAxisOffset1 = 0.04;
+        double yAxisOffset2 = 0.02;
 
-      }
+        double maxRatioToExistingAxis = 4;
 
+        double? min1 = null;
+        double? max1 = null;
+        double? min2 = null;
+        double? max2 = null;
 
+        KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>> seriesWithHighestValue = seriesList.MaxBy(x => x.Value.MaxBy(z => z.Y).Y);
+        KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>> seriesWithLowestValue = seriesList.MinBy(x => x.Value.MinBy(z => z.Y).Y);
+        KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>> seriesWithGreatestRange = seriesList.MaxBy(x => x.Value.MaxBy(m => m.Y).Y - x.Value.MinBy(m => m.Y).Y);
+
+        if(seriesWithGreatestRange.Key == seriesWithHighestValue.Key || seriesWithGreatestRange.Key == seriesWithLowestValue.Key)
+            {
+                min1 = seriesWithGreatestRange.Value.MinBy(m => m.Y).Y;
+                max1 = seriesWithGreatestRange.Value.MaxBy(m => m.Y).Y;
+                primaryAxis.Minimum = min1.Value - yAxisOffset1 * Math.Abs(max1.Value + min1.Value) / 2;
+                primaryAxis.Maximum = max1.Value + yAxisOffset2 * Math.Abs(max1.Value + min1.Value) / 2;
+                Graph.Axes.Add(primaryAxis);
+
+                addSeriesToGraph(seriesWithGreatestRange, 1);
+                seriesList.Remove(seriesWithGreatestRange);
+            }
+        else
+            {
+                double absMax = seriesWithHighestValue.Value.MaxBy(m => m.Y).Y;
+                double absMin = seriesWithLowestValue.Value.MinBy(m => m.Y).Y;
+                double greatestRangeMax = seriesWithGreatestRange.Value.MaxBy(m => m.Y).Y;
+                double greatestRangeMin = seriesWithGreatestRange.Value.MinBy(m => m.Y).Y;
+
+                if(absMax - greatestRangeMax < greatestRangeMin - absMin)
+                {
+                    min1 = greatestRangeMin;
+                    max1 = absMax;
+                    primaryAxis.Minimum = min1.Value - yAxisOffset1 * Math.Abs(max1.Value + min1.Value) / 2;
+                    primaryAxis.Maximum = max1.Value + yAxisOffset2 * Math.Abs(max1.Value + min1.Value) / 2;
+                    Graph.Axes.Add(primaryAxis);
+
+                    addSeriesToGraph(seriesWithGreatestRange, 1);
+                    seriesList.Remove(seriesWithGreatestRange);
+
+                    addSeriesToGraph(seriesWithHighestValue, 1);
+                    seriesList.Remove(seriesWithHighestValue);
+                }
+                else
+                {
+                    min1 = absMin;
+                    max1 = greatestRangeMax;
+                    primaryAxis.Minimum = min1.Value - yAxisOffset1 * Math.Abs(max1.Value + min1.Value) / 2;
+                    primaryAxis.Maximum = max1.Value + yAxisOffset2 * Math.Abs(max1.Value + min1.Value) / 2;
+                    Graph.Axes.Add(primaryAxis);
+
+                    addSeriesToGraph(seriesWithGreatestRange, 1);
+                    seriesList.Remove(seriesWithGreatestRange);
+
+                    addSeriesToGraph(seriesWithLowestValue, 1);
+                    seriesList.Remove(seriesWithLowestValue);
+                }
+
+            }
+
+        while(seriesList.Count > 0 && !max2.HasValue) //loop to define secondaryAxis
+            {
+                bool seriesDeleted = false;
+                seriesWithHighestValue = seriesList.MaxBy(x => x.Value.MaxBy(z => z.Y).Y);
+                seriesWithLowestValue = seriesList.MinBy(x => x.Value.MinBy(z => z.Y).Y);
+                seriesWithGreatestRange = seriesList.MaxBy(x => x.Value.MaxBy(m => m.Y).Y - x.Value.MinBy(m => m.Y).Y);
+
+                List<KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>> limitCaseSeries = new List<KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>>();
+                foreach (var item in new KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>[] { seriesWithHighestValue, seriesWithLowestValue, seriesWithGreatestRange } )
+                {
+                    if (!limitCaseSeries.Contains(item))
+                        limitCaseSeries.Add(item);
+                }
+
+                foreach (var series in limitCaseSeries)
+                {
+                    double seriesMin = series.Value.MinBy(m => m.Y).Y;
+                    double seriesMax = series.Value.MaxBy(m => m.Y).Y;
+
+                    if (seriesMax <= max1 && seriesMin >= min1 && ((seriesMax - seriesMin) > (max1 - min1) / maxRatioToExistingAxis || seriesMax == seriesMin)) //if range fits in primaryAxis
+                    {
+                        addSeriesToGraph(series, 1);
+                        seriesList.Remove(series);
+                        seriesDeleted = true;
+                        continue;
+                    }
+
+                    if (Math.Max(seriesMax, max1.Value) - Math.Min(seriesMin, min1.Value) > (max1 - min1) * maxRatioToExistingAxis) //if too big/low for primaryAxis
+                    {
+                        min2 = seriesMin;
+                        max2 = seriesMax;
+                        secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                        secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                        Graph.Axes.Add(secondaryAxis);
+
+                        addSeriesToGraph(series, 2);
+                        seriesList.Remove(series);
+                        seriesDeleted = true;
+                        break;
+                    }
+                }
+
+                if (seriesDeleted) continue;
+
+                seriesWithHighestValue = seriesList.MaxBy(x => x.Value.MaxBy(z => z.Y).Y);
+                seriesWithLowestValue = seriesList.MinBy(x => x.Value.MinBy(z => z.Y).Y);
+                seriesWithGreatestRange = seriesList.MaxBy(x => x.Value.MaxBy(m => m.Y).Y - x.Value.MinBy(m => m.Y).Y);
+
+                if (seriesWithGreatestRange.Key == seriesWithHighestValue.Key || seriesWithGreatestRange.Key == seriesWithLowestValue.Key)
+                {
+                    min2 = seriesWithGreatestRange.Value.MinBy(m => m.Y).Y;
+                    max2 = seriesWithGreatestRange.Value.MaxBy(m => m.Y).Y;
+                    secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                    secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                    Graph.Axes.Add(secondaryAxis);
+
+                    addSeriesToGraph(seriesWithGreatestRange, 2);
+                    seriesList.Remove(seriesWithGreatestRange);
+                }
+                else
+                {
+                    double absMax = seriesWithHighestValue.Value.MaxBy(m => m.Y).Y;
+                    double absMin = seriesWithLowestValue.Value.MinBy(m => m.Y).Y;
+                    double greatestRangeMax = seriesWithGreatestRange.Value.MaxBy(m => m.Y).Y;
+                    double greatestRangeMin = seriesWithGreatestRange.Value.MinBy(m => m.Y).Y;
+
+                    if (absMax - greatestRangeMax < greatestRangeMin - absMin)
+                    {
+                        min2 = greatestRangeMin;
+                        max2 = absMax;
+                        secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                        secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                        Graph.Axes.Add(secondaryAxis);
+
+                        addSeriesToGraph(seriesWithGreatestRange, 2);
+                        seriesList.Remove(seriesWithGreatestRange);
+
+                        addSeriesToGraph(seriesWithHighestValue, 2);
+                        seriesList.Remove(seriesWithHighestValue);
+                    }
+                    else
+                    {
+                        min2 = absMin;
+                        max2 = greatestRangeMax;
+                        secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                        secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                        Graph.Axes.Add(secondaryAxis);
+
+                        addSeriesToGraph(seriesWithGreatestRange, 2);
+                        seriesList.Remove(seriesWithGreatestRange);
+
+                        addSeriesToGraph(seriesWithLowestValue, 2);
+                        seriesList.Remove(seriesWithLowestValue);
+                    }
+                }
+            }
+
+        foreach (var series in seriesList)
+          {
+                double seriesMin = series.Value.MinBy(m => m.Y).Y;
+                double seriesMax = series.Value.MaxBy(m => m.Y).Y;
+                bool seriesFitsAxis1 = seriesMax <= max1 && seriesMin >= min1;
+                bool seriesFitsAxis2 = seriesMax <= max2 && seriesMin >= min2;
+
+                if (seriesFitsAxis1 && seriesFitsAxis2)
+                {
+                    if (max2 - min2 < max1 - min1)
+                    {
+                        addSeriesToGraph(series, 2);
+                    }
+                    else
+                    {
+                        addSeriesToGraph(series, 1);
+                    }
+                    continue;
+                }
+
+                else //if (!seriesFitsAxis1 || !seriesFitsAxis2)
+                {
+                    double deltaTop1 = Math.Max(seriesMax-max1.Value, 0);
+                    double deltaBottom1 = Math.Max(min1.Value-seriesMin, 0);
+                    double deltaTop2 = Math.Max(seriesMax - max2.Value, 0);
+                    double deltaBottom2 = Math.Max(min2.Value - seriesMin, 0);
+
+                    double relativeStretch1 = (deltaTop1 + deltaBottom1) / (max1.Value - min1.Value);
+                    double relativeStretch2 = (deltaTop2 + deltaBottom2) / (max2.Value - min2.Value);
+
+                    if (seriesMax == seriesMin)
+                    {
+                        if(relativeStretch2 < relativeStretch1)
+                        {
+                            Graph.Axes.Remove(secondaryAxis);
+                            min2 = Math.Min(min2.Value, seriesMin);
+                            max2 = Math.Max(max2.Value, seriesMax);
+                            secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                            secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                            Graph.Axes.Add(secondaryAxis);
+
+                            addSeriesToGraph(series, 2);
+                        }
+                        else
+                        {
+                            Graph.Axes.Remove(primaryAxis);
+                            min1 = Math.Min(min1.Value, seriesMin);
+                            max1 = Math.Max(max1.Value, seriesMax);
+                            primaryAxis.Minimum = min1.Value - yAxisOffset1 * Math.Abs(max1.Value + min1.Value) / 2;
+                            primaryAxis.Maximum = max1.Value + yAxisOffset2 * Math.Abs(max1.Value + min1.Value) / 2;
+                            Graph.Axes.Add(primaryAxis);
+
+                            addSeriesToGraph(series, 1);
+                        }
+                    }
+
+                    else //seriesMax != seriesMin
+                    {
+                        double seriesRatioInvNewPlot1 = (max1.Value - min1.Value + deltaTop1 + deltaBottom1) / (seriesMax - seriesMin);
+                        double seriesRatioInvNewPlot2 = (max2.Value - min2.Value + deltaTop2 + deltaBottom2) / (seriesMax - seriesMin);
+
+                        if (Math.Pow(relativeStretch2, 2) + Math.Pow(seriesRatioInvNewPlot2, 2) < Math.Pow(relativeStretch1, 2) + Math.Pow(seriesRatioInvNewPlot1, 2))
+                        {
+
+                            Graph.Axes.Remove(secondaryAxis);
+                            min2 = Math.Min(min2.Value, seriesMin);
+                            max2 = Math.Max(max2.Value, seriesMax);
+                            secondaryAxis.Minimum = min2.Value - yAxisOffset2 * Math.Abs(max2.Value + min2.Value) / 2;
+                            secondaryAxis.Maximum = max2.Value + yAxisOffset1 * Math.Abs(max2.Value + min2.Value) / 2;
+                            Graph.Axes.Add(secondaryAxis);
+
+                            addSeriesToGraph(series, 2);
+                        }
+                        else
+                        {
+                            Graph.Axes.Remove(primaryAxis);
+                            min1 = Math.Min(min1.Value, seriesMin);
+                            max1 = Math.Max(max1.Value, seriesMax);
+                            primaryAxis.Minimum = min1.Value - yAxisOffset1 * Math.Abs(max1.Value + min1.Value) / 2;
+                            primaryAxis.Maximum = max1.Value + yAxisOffset2 * Math.Abs(max1.Value + min1.Value) / 2;
+                            Graph.Axes.Add(primaryAxis);
+
+                            addSeriesToGraph(series, 1);
+                        }
+                    } 
+                }
+                
+            }
+            
       Graph.InvalidatePlot(true);
     }
 
     private void StartParseLog(string fileName)
     {
       run = false;
-
+      parser.items.Clear();
+      HitsDataGrid.Items.Refresh();
+      runningTasks.Clear();
+      PathList.Items.Refresh();
+    
       inputStream = File.OpenText(fileName);
 
       Title = fileName;
@@ -135,17 +428,16 @@ namespace CANBUS
       currentLogSize = f.Length;
       currentTitle = Title;
       string fileExt = Path.GetExtension(currentLogFile).ToLower();
-      //isCSV = currentLogFile.ToUpper().EndsWith(".CSV");
       switch (fileExt)
       {
-        case LogFileExtension.CSV:
-            logParser = new CSVParser();
-            break;
-
         case LogFileExtension.ASC:
             logParser = new VectorASCParser();
             break;
-
+        
+        case LogFileExtension.CSV:
+            logParser = new SavvyCSVParser();
+            break;
+            
         default:
             logParser = null;
             break;
@@ -159,7 +451,7 @@ namespace CANBUS
       {
         if (v.Points == null)
         {
-          v.Points = new ConcurrentStack<DataPoint>();
+          v.Points = new ConcurrentStack<CustomDataPoint>();
         }
         else
         {
@@ -169,9 +461,10 @@ namespace CANBUS
 
       if (thread != null)
       {
-        thread.Join();
+        thread.Abort();
       }
-      //thread.Abort();
+      //thread.Abort(); to abort currently loading Trace
+      //thread.Join(); to keep currently loading Trace and create new one
 
       timer = new Timer(updateTitle, null, 1000, 1000);
       run = true;
@@ -183,20 +476,15 @@ namespace CANBUS
     private void timerCallback(object state) {
       try {
         string line;
-        bool specialFlag = false;
-        if (state is string) {
-          line = state as string;
-          specialFlag = true;
-        } else {
-          line = inputStream.ReadLine();
-        }
+        string timestamp = null;
+        line = inputStream.ReadLine();
 
         if (inputStream.EndOfStream) {
           run = false;
         }
 
-        if (logParser != null && !specialFlag) {
-          line = logParser.ParseLine(line);
+        if (logParser != null) {
+          line = logParser.ParseLine(line, out timestamp);
         }
 
         if (line == null) {
@@ -204,88 +492,28 @@ namespace CANBUS
         }
 
         bool knownPacket;
-        parser.Parse(line + "\n", 0, out knownPacket);
-
-        if (exclude_unknownPackets) {
-          if (!knownPacket) {
-            return;
-          }
-        }
+        parser.Parse(line + "\n", 0, timestamp, out knownPacket);
+        int idLength = line.IndexOf(" ", 0);
 
         string s;
-        if (line.Length > 21) {
-          s = line.Substring(0, 21);
-        } else {
-          s = line;
-        }
+        s = line;
+        
+        int busLength = line.IndexOf(" ", idLength + 1) - idLength -1;
+        int bus = int.Parse(line.Substring(idLength + 1, busLength));
 
-        for (int i = 3; i < s.Length; i += 3) {
-          s = s.Insert(i, " ");
+        for (int i = idLength + 1 + busLength + 1 + 2; i < s.Length; i += 3)
+        {
+            s = s.Insert(i, " ");
         }
 
         string p = "";
-        if (s.Length > 3) {
-          p = s.Substring(0, 3);
-        }
+        p = line.Substring(0, idLength);
+        
 
         uint pac;
 
-        if (s.StartsWith("508")) {
-          Dispatcher.Invoke(() => {
-            StringBuilder vin = new StringBuilder(KeywordTextBox.Text);
-            if (vin.Length < 17) {
-              vin = new StringBuilder("VIN".PadRight(17));
-            }
-
-            int temp, idx;
-            int.TryParse(s.Substring(4, 2), System.Globalization.NumberStyles.HexNumber, null, out idx);
-            for (int i = 7; i < s.Length; i += 3) {
-              if (int.TryParse(s.Substring(i, 2), System.Globalization.NumberStyles.HexNumber, null, out temp)) {
-                if (temp != 0) {
-                  vin[idx * 7 + (i / 3) - 2] = (char)temp;
-                }
-              }
-            }
-
-            KeywordTextBox.Text = vin.ToString();
-          });
-        }
-
-        if (s.StartsWith("542") || s.StartsWith("552")) {
-          Dispatcher.Invoke(() => {
-            StringBuilder vin = new StringBuilder(" ".PadLeft(16));
-            int temp, idx;
-            idx = s.StartsWith("542") ? 0 : 8;
-            for (int i = 4; i < s.Length; i += 3) {
-              if (int.TryParse(s.Substring(i, 2), System.Globalization.NumberStyles.HexNumber, null, out temp)) {
-                if (temp != 0) {
-                  batterySerial[idx * 8 + (i / 3) - 1] = (char)temp;
-                }
-              }
-            }
-
-            BatterySerialBox.Text = new string(batterySerial.Values.ToArray());
-          });
-        }
-
-        if (s.StartsWith("558")) {
-          Dispatcher.Invoke(() => {
-            StringBuilder vin = new StringBuilder(" ".PadLeft(8));
-            int temp;
-            for (int i = 4; i < s.Length; i += 3) {
-              if (int.TryParse(s.Substring(i, 2), System.Globalization.NumberStyles.HexNumber, null, out temp)) {
-                if (temp != 0) {
-                  vin[(i / 3) - 1] = (char)temp;
-                }
-              }
-            }
-
-            FirmwareBox.Text = vin.ToString();
-          });
-        }
-
         if (uint.TryParse(p, System.Globalization.NumberStyles.HexNumber, null, out pac)) {
-          var l = runningTasks.Where(x => x.Str.StartsWith(p)).FirstOrDefault();
+          var l = runningTasks.Where(x => x.Str.StartsWith(s.Substring(0,idLength + 1 + busLength + 1))).FirstOrDefault();
           if (l == null) {
             Dispatcher.Invoke(() =>
             runningTasks.Add(new StringWithNotify(pac, s, parser, this)));
@@ -304,36 +532,21 @@ namespace CANBUS
                 if (string.IsNullOrEmpty(l.Verbose))
                   l.Verbose = parser.packetTitles[(int)pac];
               } else {
-                foreach (var item in parser.items.Where(x => x.Value.packetId == pac)) {
+                foreach (var item in parser.items.Where(x => x.Value.packetId == pac && (x.Value.bus == bus || x.Value.bus == -1))) {
                   counter++;
-                  if (counter > 4) {
+                  if (counter > 1) {
                     break;
                   }
-                  desc += item.Value.name + ":" + item.Value.GetValue(false) + " ";
+                  desc += item.Value.messageName;
                 }
                 l.Verbose = desc;
               }
 
           }
 
-          if (pac == packet) {
-            if (prevBitsUpdate < stopwatch.ElapsedMilliseconds) {
-              Dispatcher.BeginInvoke((Action)(() => {
-                updateBits((StringWithNotify)PathList.SelectedItem, s);
-              }));
-              prevBitsUpdate = stopwatch.ElapsedMilliseconds + 100;
-            }
-          }
-
-          if (prevUpdate < stopwatch.ElapsedMilliseconds) {
-            Dispatcher.BeginInvoke((Action)(() => {
-              //Graph.ResetAllAxes();
-              //Graph.ActualModel.ResetAllAxes();
-
-              Graph.InvalidatePlot(true);
-              //Graph.ResetAllAxes();
-              //Graph.ResetAllAxes();
-            }));
+          if (prevUpdate < stopwatch.ElapsedMilliseconds)
+          {
+            Dispatcher.BeginInvoke((Action)(() => { Graph.InvalidatePlot(true); }));
             prevUpdate = stopwatch.ElapsedMilliseconds + 1000;
           }
 
@@ -342,80 +555,6 @@ namespace CANBUS
       catch (Exception e) {
         Console.WriteLine(e.Message);
       }
-    }
-
-    private void updateBits(StringWithNotify sel, string s)
-    {
-      if (sel == null)
-      {
-        return;
-      }
-
-      string bits = "";
-      string rawbits = "";
-      int temp;
-
-      for (int i = 2; i < s.Length - 2; i += 2)
-      {
-        if (int.TryParse(s.Substring(i, 3), System.Globalization.NumberStyles.HexNumber, null, out temp))
-        {
-          bits += Convert.ToString(temp, 2).PadLeft(8, '0')/* + " " + Convert.ToString(temp, 16).PadLeft(2, '0').ToUpper() + " " + (char)temp /*+ " " + temp*/ + "\n";
-          rawbits += Convert.ToString(temp, 2).PadLeft(8, '0');
-        }
-      }
-      /*for (int i = 0; i < bits.Length; i += 2)
-        bits = bits.Insert(i, " ");*/
-
-      for (int j = 0; j <= rawbits.Length - 16; j += 8)
-      {
-        var inside = double.Parse(rawbits.Substring(j, 8)) * .25;
-        var outside = double.Parse(rawbits.Substring(j + 8, 8)) * 0.5 - 40.0;
-        if ((inside < 30) && (inside > 10) && (outside > -5) && (outside < 20))
-        {
-          bits += "\n" + inside;
-          bits += "\n" + outside;
-        }
-      }
-
-      BitBox.Inlines.Clear();
-
-      var bc = new BrushConverter();
-      int index = 0;
-      for (int i = 0; i < 64; i++)
-      {
-        if (index >= bits.Length)
-        {
-          break;
-        }
-
-        if ((bits[index] == '0') || (bits[index] == '1'))
-        {
-          BitBox.Inlines.Add(
-            new Run(
-              bits[index].ToString())
-            {
-              Background = sel.colors[i] != 0 ?
-            (Brush)bc.ConvertFrom
-            ("#" + Convert.ToString((sel.colors[i] * 8), 16).PadRight(6, 'C')) :
-            Brushes.White
-            });
-          index++;
-        }
-
-        while ((index < bits.Length) && (bits[index] != '0') && (bits[index] != '1'))
-        {
-          BitBox.Inlines.Add(
-          new Run(
-            bits[index].ToString()));
-          index++;
-        }
-      }
-      //else
-      //  BitBox.Text = bits;
-      /*Dispatcher.Invoke(() => {
-        for (int i = 0; i < 8; i++)
-          MyBindableTwoDArray[i, 0] = rawbits[i];
-      });*/
     }
 
     private void updateTitle(object state)
@@ -429,205 +568,11 @@ namespace CANBUS
       );
     }
 
-    private void Button_Click_AnalyzePackets(object sender, RoutedEventArgs e)
-    {
-      foreach (var p in parser.packets)
-      {
-        int bit = 63;
-        bool knownPacket;
-        parser.Parse(
-                  Convert.ToString(p.Key, 16).ToUpper().PadLeft(3, '0') +
-                  Convert.ToString(0, 16).PadRight(0 + 1, 'F').PadLeft(16, '0') + '\n', 0, out knownPacket);
-
-        for (int i = 0; i < 16; i++)
-        {
-          for (int j = 1; j < 16; j = (j << 1) + 1)
-          {
-            //await Task.Delay(100);
-            //sel.colors.Clear();
-            parser.Parse(
-                      Convert.ToString(p.Key, 16).ToUpper().PadLeft(3, '0') +
-                      Convert.ToString(j, 16).PadRight(i + 1, 'F').PadLeft(16, '0') + '\n', 0, out knownPacket);
-
-            foreach (var item in parser.items.Where(x => x.Value.packetId == p.Key))
-            {
-              if (item.Value.changed)
-              {
-                Console.WriteLine(bit + " " + item.Value.name);
-                //sel.colors.Insert(0,bit);
-                //if (!item.Value.bits.Any())
-                //  item.Value.scaling = item.Value.GetValue(false) - item.Value.min;
-
-                item.Value.bits.Insert(0, bit);
-              }
-            }
-            bit--;
-          }
-        }
-        //sel.colors=sel.colors.Reverse();
-        /*int colorCounter = 0;
-        foreach (var item in parser.items.Where(x => x.Value.packetId == sel.Pid))
-        {
-          colorCounter++;
-          foreach (var b in item.Value.bits)
-          {
-            sel.colors[b] = colorCounter;
-          }
-        }*/
-        //sel.colors.Add(item.Value.bits.First());
-        //sel.colors.Add(item.Value.bits.Last());
-      }
-      //PathList_SelectionChanged(null, null);
-
-      AnalyzeResults.ItemsSource = parser.items.Values;
-
-      if (AnalyzeResults.Columns.Any())
-      {
-        AnalyzeResults.Columns[4].Visibility = Visibility.Hidden;
-        AnalyzeResults.Columns[5].Visibility = Visibility.Hidden;
-      }
-
-      /*if (AnalyzeResults.Columns.Any())
-      {
-        AnalyzeResults.Columns.Where(x => x.Header == "Points").First().Visibility = Visibility.Hidden;
-      }*/
-    }
-
-    private void Button_Click_AsByte(object sender, RoutedEventArgs e)
-    {
-      interpret_source = 0xFFF1;
-      Button_Click_InterpretAs(null, null);
-    }
-
-    private void Button_Click_AsInt(object sender, RoutedEventArgs e)
-    {
-      interpret_source = 0xFFF3;
-      Button_Click_InterpretAs(null, null);
-    }
-
-    private void Button_Click_AsWord(object sender, RoutedEventArgs e)
-    {
-      interpret_source = 0xFFF2;
-      Button_Click_InterpretAs(null, null);
-    }
-
-    private void Button_Click_AsTemps(object sender, RoutedEventArgs e)
-    {
-      interpret_source = 0xFFF6;
-      Button_Click_InterpretAs(null, null);
-    }
-
-    private void Button_Click_Color(object sender, RoutedEventArgs e)
-    {
-      var sel = PathList.SelectedItem as StringWithNotify;
-      //sel.Str = Convert.ToString(sel.Pid, 16).ToUpper().PadLeft(3, '0');// + " 00 00 00 00 00 00 00 00";
-      //PathList_SelectionChanged(null, null);
-      //await Dispatcher.InvokeAsync(async () => {
-      int bit = 63;
-      
-      /* clear previous coloring */
-      for (int i=0; i<64; i++)
-        sel.colors[i]= 0;
-
-      timerCallback(
-        Convert.ToString(sel.Pid, 16).ToUpper().PadLeft(3, '0') +
-        Convert.ToString(0, 16).PadRight(0 + 1, 'F').PadLeft(16, '0'));
-
-      for (int i = 0; i < 16; i++)
-      {
-        for (int j = 1; j < 16; j = (j << 1) + 1)
-        {
-          //await Task.Delay(100);
-          timerCallback(
-            Convert.ToString(sel.Pid, 16).ToUpper().PadLeft(3, '0') +
-            Convert.ToString(j, 16).PadRight(i + 1, 'F').PadLeft(16, '0'));
-
-          foreach (var item in parser.items.Where(x => x.Value.packetId == sel.Pid))
-          {
-            if (item.Value.changed)
-            {
-              Console.WriteLine(bit + " " + item.Value.name);
-              //sel.colors.Insert(0,bit);
-              item.Value.bits.Insert(0, bit);
-            }
-          }
-          bit--;
-        }
-      }
-      //sel.colors=sel.colors.Reverse();
-      int colorCounter = 0;
-      foreach (var item in parser.items.Where(x => x.Value.packetId == sel.Pid))
-      {
-        colorCounter++;
-        foreach (var b in item.Value.bits)
-        {
-          sel.colors[b] = colorCounter;
-        }
-        //sel.colors.Add(item.Value.bits.First());
-        //sel.colors.Add(item.Value.bits.Last());
-      }
-      PathList_SelectionChanged(null, null);
-      // });
-    }
-
-    private void Button_Click_CopyID(object sender, RoutedEventArgs e)
-    {
-      interpret_source = packet;
-      CopyIDButton.Content = Convert.ToString(packet, 16);
-    }
-
-    private void Button_Click_Delete(object sender, RoutedEventArgs e)
-    {
-      foreach (var sel in HitsDataGrid.SelectedItems)
-      {
-        var item = ((KeyValuePair<string, ListElement>)sel).Value as ListElement;
-        parser.packets[item.packetId].values.Remove(
-          parser.packets[item.packetId].values.Where(x => x.name == item.name).FirstOrDefault());
-
-        //PathList.ItemsSource = null;
-        parser.items.Remove(((KeyValuePair<string, ListElement>)sel).Key);
-        //parser.packets
-      }
-      PathList_SelectionChanged(null, null);
-    }
-
-    private void Button_Click_InterpretAs(object sender, RoutedEventArgs e)
-    {
-      Packet p;
-      foreach (var sel in PathList.SelectedItems)
-      {
-        packet = (sel as StringWithNotify).Pid;
-        parser.packets.TryGetValue(packet, out p);
-        if (p == null)
-        {
-          p = new Packet(packet, parser);
-          parser.packets.Add(packet, p);
-        }
-
-        foreach (var v in parser.packets[interpret_source].values)
-        {
-          if (interpret_source != packet)
-          {
-            p.AddValue(Convert.ToString(packet, 16) + " " + v.name, v.unit, v.tag, v.formula);
-          }
-        }
-      }
-
-      PathList_SelectionChanged(null, null);
-    }
-
-    private void Button_Click_Left(object sender, RoutedEventArgs e)
-    {
-      timer?.Dispose();
-      timer = new Timer(timerCallback, null, 10, 1);
-      run = true;
-    }
-
     private void Button_Click_Load(object sender, RoutedEventArgs e)
     {
       run = false;
       OpenFileDialog openFileDialog1 = new OpenFileDialog();
-      openFileDialog1.Filter = "txt,csv,asc|*.txt;*.csv;*.asc";
+      openFileDialog1.Filter = "All log files|*.asc;*csv;*.txt|Vector ASCII|*.asc|SavvyCAN CSV|*.csv";
       if ((bool)openFileDialog1.ShowDialog())
       {
         if (openFileDialog1.FileName != null)
@@ -677,46 +622,64 @@ namespace CANBUS
       }
     }
 
-    private void Button_Click_Stop(object sender, RoutedEventArgs e)
+    private void Button_DisplayHelp(object sender, RoutedEventArgs e)
     {
-      run = false;
-      timer?.Dispose();
-      timer = null;
+            WindowCollection CBAWindows = Application.Current.Windows;
+            foreach (var win in CBAWindows)
+            {
+                if (win.ToString() == "CANBUS.HelpWindow")
+                {
+                    return;
+                }                    
+            }
+            new HelpWindow().Show();
     }
 
-    private void PacketMode_SelectionChanged(object sender, SelectionChangedEventArgs e) {
-      if (PacketMode.SelectedItem != null) {
-        PacketDefinitions.DefinitionSource selectedDefs = (PacketDefinitions.DefinitionSource)PacketMode.SelectedValue;
+    private void PacketMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+            PacketDefinitions.DefinitionSource selectedDefs = (PacketDefinitions.DefinitionSource)PacketMode.SelectedValue;
 
-        //try {
+            if (selectedDefs == PacketDefinitions.DefinitionSource.DBCFile)
+            {
+                OpenFileDialog openFileDialog1 = new OpenFileDialog();
+                openFileDialog1.Filter = "DBC|*.dbc";
+                openFileDialog1.Multiselect = true;
+                string[] selectedDBCs = null;
+                if ((bool)openFileDialog1.ShowDialog())
+                {
+                    if (thread != null && thread.IsAlive)
+                        thread.Abort();
+                    selectedDBCs = openFileDialog1.FileNames;
+                }
 
-          // Mode change only allowed while not running
-          if (!run) {
-            // LATER: Support DBC file selection. Better yet, put a dialog in front of "Load" where you can
-            //        select your input file, packet mode, and DBC file (if applicable)
+                if (selectedDBCs != null)
+                {
+                    foreach (var element in selectedDBCs)
+                    {
+                        var newItem = new DBCwAssociatedBus();
+                        if (dbcList.Where(x => x.Path == element).Count() == 0)
+                        {
+                            newItem.Path = element;
+                            newItem.Bus = "-1";
+                            //newItem.isJ1939 = false;
+                            dbcList.Add(newItem);
+                        }
 
-            if (selectedDefs == PacketDefinitions.DefinitionSource.DBCFile) {
-              OpenFileDialog openFileDialog1 = new OpenFileDialog();
-              openFileDialog1.Filter = "DBC|*.dbc";
-              if ((bool)openFileDialog1.ShowDialog()) {
-                if (openFileDialog1.FileName != null)
-                  parser = Parser.FromSource(this, selectedDefs, openFileDialog1.FileName);
-              }
-            } else
-              parser = Parser.FromSource(this, selectedDefs);
-          } else if (parser != null && parser.Definitions.Source != selectedDefs && PacketMode.Tag == null) {
-            PacketMode.Tag = "undo";
-            PacketMode.SelectedValue = parser.Definitions.Source;
-            PacketMode.Tag = null;
-          }
-        /*} catch (Exception ex) {
-          MessageBox.Show(ex.ToString());
-        }*/
-      }
+                    }
+                    DBCFilesGrid.Items.Refresh();
+                    Start_Parsing();
+                }
+            }
+            parser = Parser.FromSource(this, PacketDefinitions.DefinitionSource.DBCFile, dbcList);
+        }
 
+    private void Button_Click_DBC(object sender, RoutedEventArgs e)
+    {
+        PacketMode.SelectedIndex = 0;
+        PacketMode.SelectedIndex = 1;
     }
 
-        private void PopulateDropdown(ComboBox cmb, System.Collections.IEnumerable items, string valueMember, string displayMember)
+    private void PopulateDropdown(ComboBox cmb, System.Collections.IEnumerable items, string valueMember, string displayMember)
     {
         cmb.SelectedValuePath = valueMember;
         cmb.DisplayMemberPath = displayMember;
@@ -725,135 +688,80 @@ namespace CANBUS
         if (cmb.HasItems) cmb.SelectedIndex = 0;
     }
 
-    private void HitsDataGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-      try
-      {
-        Hits dataRow = (Hits)HitsDataGrid.SelectedItem;
-        int index = HitsDataGrid.CurrentCell.Column.DisplayIndex;
-        Console.WriteLine(index);
-        Console.WriteLine(dataRow);
-        if (index == 0)
-        {
-          Process.Start(dataRow.path);
-        }
-        else
-        {
-          Process.Start(dataRow.path + '\\' + dataRow.filename);
-        }
-      }
-      catch (Exception ex)
-      {
-        MessageBox.Show(ex.Message);
-      }
-    }
-
     private void HitsDataGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
       try
       {
         Graph.Series.Clear();
 
-        List<KeyValuePair<string, ConcurrentStack<DataPoint>>> seriesList = new List<KeyValuePair<string, ConcurrentStack<DataPoint>>>();
+        List<KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>> seriesList = new List<KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>>();
         foreach (var s in HitsDataGrid.SelectedItems)
         {
           var i = (KeyValuePair<string, ListElement>)s;
-          seriesList.Add(new KeyValuePair<string, ConcurrentStack<DataPoint>>(i.Key, i.Value.Points));
+          seriesList.Add(new KeyValuePair<Tuple<string, List<KeyValuePair<long, string>>>, ConcurrentStack<CustomDataPoint>>(Tuple.Create(i.Key, i.Value.VT_List), i.Value.Points));
         }
         setGraphSeriesList(seriesList);
       }
       catch (Exception ex)
       {
-        MessageBox.Show(ex.Message);
+        if(ex.Message != "no data")
+            MessageBox.Show(ex.Message);
       }
-    }
-
-    private void PathList_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-      try
-      {
-        string pStart = null;
-        foreach (var sel in PathList.SelectedItems)
-        {
-          pStart = ((StringWithNotify)sel).Str.Substring(0, 3);
-        }
-
-        string line = null;
-        switch (e.Key)
-        {
-          case System.Windows.Input.Key.Right:
-            do
-            {
-              line = inputStream.ReadLine();
-            }
-            while (!line.StartsWith(pStart));
-            timerCallback(line);
-            break;
-        }
-      }
-      catch (Exception ex)
-      {
-        Console.WriteLine(ex.Message);
-      }
+      Graph.InvalidatePlot(true);
     }
 
     private void PathList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
       try
       {
-        List<uint> packetList = new List<uint>();
-        string pStart = null;
+        List<Tuple<uint, int>> packetList = new List<Tuple<uint, int>>();
+        string packetIdStr = null;
+        string busIdStr = null;
         string s = null;
+
         foreach (var sel in PathList.SelectedItems)
         {
-          pStart = (s = ((StringWithNotify)sel).Str).Substring(0, 3);
-          uint.TryParse(pStart, System.Globalization.NumberStyles.HexNumber, null, out packet);
-          packetList.Add(packet);
+          s = ((StringWithNotify)sel).Str;
+          int idLength = s.IndexOf(" ", 0);
+          packetIdStr = s.Substring(0, idLength);
+          int busLength = s.IndexOf(" ", idLength + 1) - idLength - 1;
+          busIdStr = s.Substring(idLength + 1, busLength);
+          uint.TryParse(packetIdStr, System.Globalization.NumberStyles.HexNumber, null, out packetId);
+          int.TryParse(busIdStr, out busId);
+          packetList.Add(Tuple.Create(packetId, busId));
         }
 
-        foreach (var sel in runningTasks.Where(x => x.Stay))
+        foreach (var sel in runningTasks)
         {
-          uint.TryParse(pStart, System.Globalization.NumberStyles.HexNumber, null, out packet);
-          packetList.Add(packet);
+          uint.TryParse(packetIdStr, System.Globalization.NumberStyles.HexNumber, null, out packetId);
+          int.TryParse(busIdStr, out busId);
+          packetList.Add(Tuple.Create(packetId, busId));
         }
 
-        if (s != null)
-        {
-          updateBits(PathList.SelectedItem as StringWithNotify, s);
-        }
-
-        var items = parser.items.Where(x => packetList.Contains(x.Value.packetId) && !x.Value.name.Contains("updated"));
+        var items = parser.items.Where(x => (packetList.Contains(Tuple.Create(x.Value.packetId, x.Value.bus))
+                                        || (packetList.Any(m => m.Item1 == x.Value.packetId) && x.Value.bus == -1)));
 
         HitsDataGrid.ItemsSource = items;
         HitsDataGrid.DataContext = parser.items;
 
-        List<KeyValuePair<string, ConcurrentStack<DataPoint>>> seriesList = new List<KeyValuePair<string, ConcurrentStack<DataPoint>>>();
-        foreach (var i in items)
-        {
-          seriesList.Add(new KeyValuePair<string, ConcurrentStack<DataPoint>>(i.Value.name, i.Value.Points));
-        }
-        setGraphSeriesList(seriesList);
-
-        /*s = "";
-        foreach (var sel in PathList.SelectedItems)
-        {
-          Packet p = parser.packets[(sel as StringWithNotify).Pid];
-          foreach (var v in p.values)
-          {
-            s += v.formula.ToString() +'\n';
-          }
-        }
-        Formula.Content = s;*/
+        //List<KeyValuePair<string, ConcurrentStack<DataPoint>>> seriesList = new List<KeyValuePair<string, ConcurrentStack<DataPoint>>>();
+        //foreach (var i in items)
+        //{
+        //  seriesList.Add(new KeyValuePair<string, ConcurrentStack<DataPoint>>(i.Value.name, i.Value.Points));
+        //}
+        //setGraphSeriesList(seriesList);
       }
       catch (Exception ex)
       {
         MessageBox.Show(ex.Message);
       }
+      Graph.InvalidatePlot(true);
     }
 
     private void Window_Closed(object sender, EventArgs e)
     {
       run = false;
+      App.Current.Shutdown();
     }
 
     protected virtual void Dispose(bool disposing)
@@ -888,8 +796,84 @@ namespace CANBUS
       Dispose(false);
     }
 
-    private void Button_Click(object sender, RoutedEventArgs e) {
-      trip = new Trip(false);
+    private void Start_Parsing()
+    {
+        parser = Parser.FromSource(this, PacketDefinitions.DefinitionSource.DBCFile, dbcList);
+        if(currentLogFile!=null)
+            StartParseLog(currentLogFile);
     }
-  }
+
+    private void AbortThread(object  sender, EventArgs  e)
+    {
+        if(thread != null && thread.IsAlive)
+            thread.Abort();
+    }
+
+    private void DBCFilesGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+    {
+        Start_Parsing();
+    }
+
+    private void dataGridPathList_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        string[] draggedLogFiles = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+        if (draggedLogFiles.Length == 1 && allowedLogFormat.Contains(draggedLogFiles[0].Split('.').Last().ToUpper()))
+        {
+            e.Effects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+    }
+
+    private void dataGridDBC_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        e.Effects = DragDropEffects.None;
+        string[] draggedDBCFiles = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+        foreach (string file in draggedDBCFiles)
+            {
+                if (file.Split('.').Last().ToUpper() == "DBC")
+                {
+                    e.Effects = DragDropEffects.Copy;
+                }
+            }
+    }
+
+    private void dataGridPathList_DragDrop(object sender, DragEventArgs e)
+    {
+        string[] draggedLogFiles = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+        if (draggedLogFiles.Length == 1 && allowedLogFormat.Contains(draggedLogFiles[0].Split('.').Last().ToUpper()))
+        {
+            currentLogFile = draggedLogFiles[0];
+            StartParseLog(currentLogFile);
+        }
+    }
+
+    private void dataGridDBC_DragDrop(object sender, DragEventArgs e)
+    {
+        string[] draggedDBCFiles = (string[])e.Data.GetData(DataFormats.FileDrop);
+
+        foreach (string file in draggedDBCFiles)
+            {
+                if (file.Split('.').Last().ToUpper() == "DBC")
+                {
+                    var newItem = new DBCwAssociatedBus();
+                    if (dbcList.Where(x => x.Path == file).Count() == 0)
+                    {
+                        newItem.Path = file;
+                        newItem.Bus = "-1";
+                        dbcList.Add(newItem);
+                    }
+                }
+            }
+    }
+
+    }
+
 }

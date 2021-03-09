@@ -1,0 +1,123 @@
+﻿<Window x:Class="CANBUS.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:CANBUS"
+        mc:Ignorable="d"
+        Title="Help" Height="502.5" Width="627.5">
+    <Grid>
+        <RichTextBox x:Name="richTextBox" Margin="10" Block.LineHeight="6">
+            <FlowDocument>
+                <Paragraph LineHeight="6" FontSize="16">
+                    <Run Text="Graph Controls:"/>
+                </Paragraph>
+                <Paragraph LineHeight="6" FontSize="14">
+                    <Run Text="Pan*:"/>
+                </Paragraph>
+                <List MarkerStyle="Box" MarkerOffset="1">
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Right mouse button,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Alt+Left mouse button,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Up/Down/Left/Right arrow key, Ctrl+Arrow key for fine pan"/>
+                        </Paragraph>
+                    </ListItem>
+                </List>
+                <Paragraph LineHeight="6" FontSize="14">
+                    <Run Text="Zoom*:"/>
+                </Paragraph>
+                <List MarkerStyle="Box" MarkerOffset="1">
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Mouse wheel,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+Mouse wheel for fine zoom"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Zoom in: "/>
+                            <Run Text="'Add', 'PageUp', Ctrl+'Add'/'PageUp' for fine"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Zoom out: "/>
+                            <Run Text="'Subtract', 'PageDown', Ctrl+'Subtract'/'PageDown' for fine"/>
+                        </Paragraph>
+                    </ListItem>
+                </List>
+                <Paragraph LineHeight="6" FontSize="14">
+                    <Run Text="Zoom by rectangle:"/>
+                </Paragraph>
+                <List MarkerStyle="Box" MarkerOffset="1">
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+Right mouse button,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Middle mouse button,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+Alt+Left mouse button"/>
+                        </Paragraph>
+                    </ListItem>
+                </List>
+                <Paragraph LineHeight="6" FontSize="14">
+                    <Run Text="Reset:"/>
+                </Paragraph>
+                <List MarkerStyle="Box" MarkerOffset="1">
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+Right mouse button double-click,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Middle mouse button double-click,"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+Alt+Left mouse button double-click"/>
+                        </Paragraph>
+                    </ListItem>
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="A, Home"/>
+                        </Paragraph>
+                    </ListItem>
+                </List>
+                <Paragraph LineHeight="6" FontSize="14">
+                    <Run Text="Copy bitmap:"/>
+                </Paragraph>
+                <List MarkerStyle="Box" MarkerOffset="1">
+                    <ListItem>
+                        <Paragraph LineHeight="6">
+                            <Run Text="Ctrl+C"/>
+                        </Paragraph>
+                    </ListItem>
+                </List>
+                <Paragraph LineHeight="6">
+                    <Run Text="*You can zoom/pan a single axis by positioning the mouse cursor over the axis before starting the zoom/pan."/>
+                </Paragraph>
+            </FlowDocument>
+        </RichTextBox>
+    </Grid>
+</Window>

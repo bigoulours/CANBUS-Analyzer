@@ -5,12 +5,14 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using CANBUS;
 
 namespace TeslaSCAN
 {
   public class ListElement : INotifyPropertyChanged
   {
     public uint packetId { get; set; }
+    public int bus { get; set; }
     public string idHex
     {
       get
@@ -19,6 +21,7 @@ namespace TeslaSCAN
       }
     }
     public string name { get; set; }
+    public string messageName { get; set; }
     private object value;
     public object Current
     {
@@ -28,13 +31,14 @@ namespace TeslaSCAN
       }
     }
 
-    public ConcurrentStack<DataPoint> Points { get; set; }
+    public ConcurrentStack<CustomDataPoint> Points { get; set; }
     public LineSeries Line { get; private set; }
 
     public string unit { get; set; }
     public int index;
     public double max { get; set; }
     public double min { get; set; }
+    public List<KeyValuePair<long, string>> VT_List;
     public bool changed;
     public bool selected;
     public string tag;
@@ -56,83 +60,12 @@ namespace TeslaSCAN
       return value.ToString();
     }
 
-    public double Convert(double val, bool convertToImperial)
-    {
-      if (!convertToImperial)
-      {
-        return val;
-      }
-
-      if ((unit.ToUpper() == "C") || (unit == "zCC"))
-      {
-        return val * 1.8 + 32;
-      }
-
-      if (unit == "Nm")
-      {
-        return val * Parser.nm_to_ftlb;
-      }
-
-      if (unit == "wh|km")
-      {
-        return val * Parser.miles_to_km;
-      }
-
-      if (unit.ToLower().Contains("km"))
-      {
-        return val / Parser.miles_to_km;
-      }
-
-      return val;
-    }
-
-    public string GetUnit(bool convertToImperial)
-    {
-      if (!convertToImperial)
-      {
-        return unit;
-      }
-
-      if ((unit.ToUpper() == "C") || (unit == "zCC"))
-      {
-        return "F";
-      }
-
-      if (unit == "Nm")
-      {
-        return "LbFt";
-      }
-
-      if (unit == "wh|km")
-      {
-        return "wh|mi";
-      }
-
-      if (unit.ToLower().Contains("km"))
-      {
-        return unit.ToLower().Replace("km", "mi");
-      }
-
-      return unit;
-    }
-
-    public object GetValue(bool convertToImperial)
-    {
-      if (convertToImperial && value is double)
-      {
-        return Convert((double)value, convertToImperial);
-      }
-      else
-      {
-        return value;
-      }
-    }
-
-    public void SetValue(object val)
+    public void SetValue(object val, string timestamp)
     {
       previous = value;
       changed = value != val;
       value = val;
+      TimeSpan formatedTimestamp = TimeSpan.FromMilliseconds(System.Convert.ToDouble(timestamp)/1000);
 
       if (changed) {
         NotifyPropertyChanged("Current");
@@ -154,7 +87,7 @@ namespace TeslaSCAN
 #if VERBOSE
       Console.WriteLine(this.name + " " + val);
 #endif
-        Points.Push(new DataPoint(OxyPlot.Axes.DateTimeAxis.ToDouble(DateTime.Now), valueD));
+        Points.Push(new CustomDataPoint(OxyPlot.Axes.DateTimeAxis.ToDouble(formatedTimestamp), valueD));
         NotifyPropertyChanged("Points");
       }
       /*if (Points.Count > 1)
@@ -175,19 +108,22 @@ namespace TeslaSCAN
      }
     }
 
-    public ListElement(string name, string unit, string tag, int index, object value, uint packetId)
+    public ListElement(string name, string messageName, string unit, string tag, int index, object value, uint packetId, int bus, List<KeyValuePair<long, string>> VT_List)
     {
       this.name = name;
+      this.messageName = messageName;
+      this.bus = bus;
       this.unit = unit;
       this.tag = tag;
       this.index = index;
       this.value = value;
+      this.VT_List = VT_List;
       if (value is double)
         this.max = this.min = (double)value;
       this.packetId = packetId;
       changed = true;
 
-      this.Points = new ConcurrentStack<DataPoint>();
+      this.Points = new ConcurrentStack<CustomDataPoint>();
     }
   }
 }
