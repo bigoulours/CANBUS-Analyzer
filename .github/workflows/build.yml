@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "master"
+      
+jobs:         
+  buildwindows:
+    name: Windows x64
+    runs-on: windows-2019
+
+    steps:      
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      
+      - name: Install NuGet Packages
+        shell: cmd
+        run: |
+          nuget.exe install oxyplot.core -Version 2.0.0 -OutputDirectory .\packages
+          nuget.exe install oxyplot.wpf -Version 2.0.0 -OutputDirectory .\packages
+      
+      - name: Compile
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe" CANBUSAnalyzer.sln /t:Clean,Build /p:Configuration=Release
+      - name: Package
+        run: |
+          mkdir package
+          copy "CANBUSAnalyzer/bin/Release/*" package/
+      - uses: actions/upload-artifact@v2
+        with:
+          name: CANBUSAnalyzer
+          path: package
+ 
+  pre-release:
+    name: "pre-release"
+    runs-on: "ubuntu-latest"
+    needs: [buildwindows]
+
+    steps:
+      - uses: actions/download-artifact@v2
+
+      - name: zip artifacts
+        run: zip -r CANBUSAnalyzer_CIBuild.zip CANBUSAnalyzer
+        
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "continuous"
+          prerelease: true
+          title: "Development Build"
+          files: |
+            CANBUSAnalyzer_CIBuild.zip
