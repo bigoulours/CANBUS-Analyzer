@@ -1,0 +1,76 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+      
+jobs:         
+  buildwindows:
+    name: Windows x64
+    runs-on: windows-2019
+
+    steps:  
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      
+      - name: Install NuGet Packages
+        shell: cmd
+        run: |
+          nuget.exe install oxyplot.core -Version 2.0.0 -OutputDirectory .\packages
+          nuget.exe install oxyplot.wpf -Version 2.0.0 -OutputDirectory .\packages
+      
+      - name: Compile
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe" CANBUSAnalyzer.sln /t:Clean,Build /p:Configuration=Release
+      - name: Package
+        run: |
+          mkdir package
+          copy "CANBUSAnalyzer/bin/Release/*" package/
+      - uses: actions/upload-artifact@v2
+        with:
+          name: CANBUSAnalyzer
+          path: package
+ 
+  pre-release:
+    name: "release"
+    runs-on: "ubuntu-latest"
+    needs: [buildwindows]
+
+    steps:
+      - name: Get tag
+        id: tag
+        uses: dawidd6/action-get-tag@v1
+        with:
+          # Optionally strip `v` prefix
+          strip_v: false
+
+      - uses: actions/download-artifact@v2
+
+      - name: zip artifacts
+        run: zip -r CANBUSAnalyzer.zip CANBUSAnalyzer
+        
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: CANBUSAnalyzer.zip
+          asset_name: CANBUSAnalyzer_${{steps.tag.outputs.tag}}.zip
+          asset_content_type: application/octet-stream
