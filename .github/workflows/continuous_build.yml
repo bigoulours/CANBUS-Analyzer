@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - "master"
+    paths-ignore:
+      - 'README.md'
+      - '.github/workflows/release_build.yml'
+      - '.gitignore'
+      - 'screenshot.png'
       
 jobs:         
   buildwindows:
