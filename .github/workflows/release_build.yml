@@ -29,7 +29,8 @@ jobs:
       - name: Package
         run: |
           mkdir package
-          copy "CANBUSAnalyzer/bin/Release/*" package/
+          copy "CANBUSAnalyzer/bin/Release/*.exe" package/
+          copy "CANBUSAnalyzer/bin/Release/*.dll" package/
       - uses: actions/upload-artifact@v2
         with:
           name: CANBUSAnalyzer
